@@ -279,6 +279,41 @@ defmodule PhoenixEmail.TailwindTest do
       refute Map.has_key?(map, "sm:flex")
       refute Map.has_key?(map, "hover:underline")
     end
+
+    test "converts rounded-full's calc(infinity * 1px) to 9999px" do
+      css = """
+      .rounded-full {
+        border-radius: calc(infinity * 1px);
+      }
+      """
+
+      assert Compiler.parse(css) == %{"rounded-full" => "border-radius:9999px"}
+    end
+
+    test "converts opacity modifiers over oklch theme colors" do
+      css = """
+      :root, :host {
+        --color-blue-600: oklch(54.6% 0.245 262.881);
+      }
+      .bg-blue-600\\/60 {
+        background-color: color-mix(in srgb, var(--color-blue-600) 60%, transparent);
+      }
+      """
+
+      assert Compiler.parse(css)["bg-blue-600/60"] ==
+               "background-color:rgba(21,93,252,0.6)"
+    end
+
+    test "splits two-value logical shorthands into start and end" do
+      css = """
+      .py-\\[10px_20px\\] {
+        padding-block: 10px 20px;
+      }
+      """
+
+      assert Compiler.parse(css)["py-[10px_20px]"] ==
+               "padding-top:10px;padding-bottom:20px"
+    end
   end
 
   describe "end to end with the tailwindcss binary" do

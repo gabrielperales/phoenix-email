@@ -11,7 +11,7 @@ defmodule PhoenixEmail.Tailwind.Compiler do
 
   require Logger
 
-  @npx_tailwind_version "3.4.17"
+  @fallback_tailwind_version "4.3.2"
 
   # Logical properties (v4 output) expanded to physical ones, assuming ltr.
   @logical_properties %{
@@ -234,8 +234,20 @@ defmodule PhoenixEmail.Tailwind.Compiler do
 
   defp expand_property(property, value) do
     case Map.fetch(@logical_properties, property) do
-      {:ok, properties} -> Enum.map(properties, &"#{&1}:#{value}")
-      :error -> ["#{property}:#{value}"]
+      {:ok, [start_property, end_property]} ->
+        case String.split(value, ~r/\s+/, trim: true) do
+          [start_value, end_value] ->
+            ["#{start_property}:#{start_value}", "#{end_property}:#{end_value}"]
+
+          _single_or_more ->
+            Enum.map([start_property, end_property], &"#{&1}:#{value}")
+        end
+
+      {:ok, properties} ->
+        Enum.map(properties, &"#{&1}:#{value}")
+
+      :error ->
+        ["#{property}:#{value}"]
     end
   end
 
@@ -275,18 +287,35 @@ defmodule PhoenixEmail.Tailwind.Compiler do
       |> convert_oklch()
       |> convert_color_mix()
       |> convert_rgb()
+      |> expand_short_hex()
     end
+  end
+
+  # #abc -> #aabbcc; some older email clients only understand 6-digit hex.
+  defp expand_short_hex(value) do
+    Regex.replace(~r/#([0-9a-fA-F]{3})\b/, value, fn _, hex ->
+      "#" <> (hex |> String.graphemes() |> Enum.map_join(&(&1 <> &1)) |> String.downcase())
+    end)
   end
 
   # Evaluates calc() chains of * and / over numbers where at most one operand
   # carries a unit: calc(0.25rem * 5) -> 1.25rem, calc(1 / 2 * 100%) -> 50%.
   defp eval_calc(value) do
     Regex.replace(~r/calc\(([^()]*)\)/, value, fn full, expression ->
+      evaluate_calc_expression(expression, full)
+    end)
+  end
+
+  # v4 emits rounded-full as calc(infinity * 1px).
+  defp evaluate_calc_expression(expression, full) do
+    if String.match?(expression, ~r/^\s*infinity\s*\*\s*1px\s*$/i) do
+      "9999px"
+    else
       case eval_expression(expression) do
         {:ok, result} -> result
         :error -> full
       end
-    end)
+    end
   end
 
   defp eval_expression(expression) do
@@ -475,11 +504,11 @@ defmodule PhoenixEmail.Tailwind.Compiler do
   end
 
   defp compile_css(content, config) do
-    with {:ok, command, prefix_args} <- resolve_binary(),
+    with {:ok, command, prefix_args, input_base} <- resolve_binary(),
          {:ok, major} <- detect_version(command, prefix_args) do
       tmp =
         Path.join(
-          System.tmp_dir!(),
+          input_base || System.tmp_dir!(),
           "phoenix_email_tailwind_#{System.unique_integer([:positive])}"
         )
 
@@ -558,30 +587,65 @@ defmodule PhoenixEmail.Tailwind.Compiler do
 
   @doc """
   Finds the tailwind binary: `:tailwind_bin` config, the tailwind hex
-  package, `tailwindcss` in `$PATH`, or `npx tailwindcss@#{@npx_tailwind_version}`.
+  package, `tailwindcss` in `$PATH`, or — as a fallback — a Tailwind
+  v#{@fallback_tailwind_version} CLI installed with npm into a cached
+  directory. New Phoenix projects ship the hex package with v4, so that is
+  the path most apps take.
 
-  For Tailwind v4 use a standalone binary (the hex package downloads one) —
-  the npm CLI needs a `node_modules` next to the input to resolve its
-  imports, so the npx fallback stays on v3.
+  Returns `{:ok, command, prefix_args, input_base_dir}` — the last element
+  forces the generated input CSS to live next to the npm `node_modules` so
+  the CLI can resolve its imports (`nil` for standalone binaries).
   """
   def resolve_binary do
     cond do
       bin = Application.get_env(:phoenix_email, :tailwind_bin) ->
-        {:ok, bin, []}
+        {:ok, bin, [], nil}
 
       bin = hex_package_bin() ->
-        {:ok, bin, []}
+        {:ok, bin, [], nil}
 
       bin = System.find_executable("tailwindcss") ->
-        {:ok, bin, []}
+        {:ok, bin, [], nil}
 
-      npx = System.find_executable("npx") ->
-        {:ok, npx, ["--yes", "tailwindcss@#{@npx_tailwind_version}"]}
+      npm = System.find_executable("npm") ->
+        npm_cli(npm)
 
       true ->
         {:error,
          "no tailwindcss binary found — set config :phoenix_email, :tailwind_bin, " <>
-           "add the :tailwind hex package, or install tailwindcss/npx"}
+           "add the :tailwind hex package, or install tailwindcss/npm"}
+    end
+  end
+
+  # Installs the v4 CLI once into a cached directory; the npm distribution
+  # (unlike the standalone binary) resolves "tailwindcss/*.css" imports
+  # through node_modules, which is why the input is generated next to it.
+  defp npm_cli(npm) do
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "phoenix_email_tailwind_cli_#{@fallback_tailwind_version}"
+      )
+
+    bin = Path.join([dir, "node_modules", ".bin", "tailwindcss"])
+
+    if File.exists?(bin) do
+      {:ok, bin, [], dir}
+    else
+      File.mkdir_p!(dir)
+
+      install_args = [
+        "install",
+        "--prefix",
+        dir,
+        "tailwindcss@#{@fallback_tailwind_version}",
+        "@tailwindcss/cli@#{@fallback_tailwind_version}"
+      ]
+
+      case System.cmd(npm, install_args, stderr_to_stdout: true) do
+        {_, 0} -> {:ok, bin, [], dir}
+        {out, status} -> {:error, "npm install of the tailwind CLI failed (#{status}): #{out}"}
+      end
     end
   end
 
