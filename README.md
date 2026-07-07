@@ -110,6 +110,36 @@ Property names may be atoms or strings in snake_case, camelCase, or kebab-case (
 
 Maps render their declarations sorted by property so output is deterministic; use a keyword list when declaration order matters (e.g. a shorthand followed by a longhand override).
 
+## Tailwind classes
+
+Every visual component also accepts a `class` attribute with Tailwind utilities — the equivalent of react-email's `<Tailwind>` wrapper, but compiled **at build time** instead of on every render:
+
+```sh
+mix phoenix_email.tailwind
+```
+
+The task scans your sources for classes (Tailwind's own content scanning), runs the real `tailwindcss` binary, converts the CSS to email-safe inline declarations (`rem` → `px`, `rgb()` → hex), and stores a class → style map under `priv/`. Rendering a `class` is then a map lookup — no external processes per email:
+
+```heex
+<.container class="border border-gray-200 rounded-lg p-5 max-w-[465px]">
+  <.button href={@url} class="bg-black text-white text-xs font-semibold rounded px-5 py-3">
+    Join the team
+  </.button>
+</.container>
+```
+
+Because the real compiler runs, your `tailwind.config.js` theme, custom colors, and arbitrary values all work. Configuration:
+
+```elixir
+config :phoenix_email,
+  tailwind_content: ["lib/**/*.ex"],                    # files to scan
+  tailwind_config: "assets/tailwind.config.js",         # optional, your own config
+  tailwind_map_path: "priv/phoenix_email/tailwind.map", # compiled map location
+  tailwind_bin: "/path/to/tailwindcss"                  # optional, see below
+```
+
+The binary is resolved from `:tailwind_bin`, the [tailwind](https://hex.pm/packages/tailwind) hex package, `tailwindcss` in `$PATH`, or `npx tailwindcss@3`. Re-run the task after changing classes (wire it into your `assets.build`/`test` aliases). Same rules as Tailwind itself: classes must be literal strings in your source — no `"bg-#{color}"` — and variants (`sm:`, `hover:`) are skipped since they can't be inlined. `class` merges between component defaults and `style`, so explicit styles always win.
+
 ## Optional dependencies
 
 | Feature | Add to your deps |

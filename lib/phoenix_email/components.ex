@@ -37,6 +37,7 @@ defmodule PhoenixEmail.Components do
   alias PhoenixEmail.Highlight
   alias PhoenixEmail.Markdown
   alias PhoenixEmail.Style
+  alias PhoenixEmail.Tailwind
 
   @preview_max_length 150
 
@@ -77,12 +78,13 @@ defmodule PhoenixEmail.Components do
   @doc """
   The `<body>` of the email.
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
   def body(assigns) do
-    assigns = put_style(assigns, assigns.style)
+    assigns = put_style(assigns, class_style(assigns))
 
     ~H"""
     <body {@attrs}>{render_slot(@inner_block)}</body>
@@ -122,6 +124,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   Centered layout table that caps the email width at 37.5em (600px).
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
@@ -135,7 +138,7 @@ defmodule PhoenixEmail.Components do
       cellpadding="0"
       cellspacing="0"
       role="presentation"
-      style={Style.merge("max-width:37.5em", @style)}
+      style={Style.merge("max-width:37.5em", class_style(assigns))}
       {@rest}
     >
       <tbody>
@@ -150,12 +153,13 @@ defmodule PhoenixEmail.Components do
   @doc """
   Full-width layout table used to group content into blocks.
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
   def section(assigns) do
-    assigns = put_style(assigns, assigns.style)
+    assigns = put_style(assigns, class_style(assigns))
 
     ~H"""
     <table
@@ -179,12 +183,13 @@ defmodule PhoenixEmail.Components do
   @doc """
   A table row. Put `<.column>` components in the slot.
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
   def row(assigns) do
-    assigns = put_style(assigns, assigns.style)
+    assigns = put_style(assigns, class_style(assigns))
 
     ~H"""
     <table
@@ -206,12 +211,13 @@ defmodule PhoenixEmail.Components do
   @doc """
   A column (`<td>`) inside a `<.row>`.
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global, include: ~w(align valign width height bgcolor))
   slot(:inner_block, required: true)
 
   def column(assigns) do
-    assigns = put_style(assigns, assigns.style)
+    assigns = put_style(assigns, class_style(assigns))
 
     ~H"""
     <td {@attrs}>{render_slot(@inner_block)}</td>
@@ -225,6 +231,7 @@ defmodule PhoenixEmail.Components do
   `mr`, `mb` and `ml`. Numbers are treated as px; strings are used as-is.
   """
   attr(:as, :string, default: "h1", values: ~w(h1 h2 h3 h4 h5 h6))
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:m, :any, default: nil)
   attr(:mx, :any, default: nil)
@@ -237,7 +244,8 @@ defmodule PhoenixEmail.Components do
   slot(:inner_block, required: true)
 
   def heading(assigns) do
-    assigns = assign(assigns, :computed_style, Style.merge(margin_style(assigns), assigns.style))
+    assigns =
+      assign(assigns, :computed_style, Style.merge(margin_style(assigns), class_style(assigns)))
 
     ~H"""
     <.dynamic_tag tag_name={@as} style={@computed_style} {@rest}>{render_slot(@inner_block)}</.dynamic_tag>
@@ -247,13 +255,14 @@ defmodule PhoenixEmail.Components do
   @doc """
   A paragraph of text.
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
   def text(assigns) do
     ~H"""
-    <p style={Style.merge("font-size:14px;line-height:24px;margin:16px 0", @style)} {@rest}>{render_slot(@inner_block)}</p>
+    <p style={Style.merge("font-size:14px;line-height:24px;margin:16px 0", class_style(assigns))} {@rest}>{render_slot(@inner_block)}</p>
     """
   end
 
@@ -262,6 +271,7 @@ defmodule PhoenixEmail.Components do
   """
   attr(:href, :string, required: true)
   attr(:target, :string, default: "_blank")
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
@@ -271,7 +281,7 @@ defmodule PhoenixEmail.Components do
     <a
       href={@href}
       target={@target}
-      style={Style.merge("color:#067df7;text-decoration-line:none", @style)}
+      style={Style.merge("color:#067df7;text-decoration-line:none", class_style(assigns))}
       {@rest}
     >{render_slot(@inner_block)}</a>
     """
@@ -287,16 +297,18 @@ defmodule PhoenixEmail.Components do
   """
   attr(:href, :string, required: true)
   attr(:target, :string, default: nil)
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
   def button(assigns) do
-    {pt, pr, pb, pl} = Style.padding(assigns.style)
+    base_style = class_style(assigns)
+    {pt, pr, pb, pl} = Style.padding(base_style)
 
     computed_style =
       Style.merge(
-        assigns.style,
+        base_style,
         "line-height:100%;text-decoration:none;display:inline-block;max-width:100%;" <>
           "mso-padding-alt:0px;padding:#{pt}px #{pr}px #{pb}px #{pl}px"
       )
@@ -330,6 +342,7 @@ defmodule PhoenixEmail.Components do
   attr(:alt, :string, default: nil)
   attr(:width, :any, default: nil)
   attr(:height, :any, default: nil)
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
 
@@ -340,7 +353,7 @@ defmodule PhoenixEmail.Components do
       alt={@alt}
       width={@width}
       height={@height}
-      style={Style.merge("display:block;outline:none;border:none;text-decoration:none", @style)}
+      style={Style.merge("display:block;outline:none;border:none;text-decoration:none", class_style(assigns))}
       {@rest}
     />
     """
@@ -349,12 +362,13 @@ defmodule PhoenixEmail.Components do
   @doc """
   A horizontal divider.
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
 
   def hr(assigns) do
     ~H"""
-    <hr style={Style.merge("width:100%;border:none;border-top:1px solid #eaeaea", @style)} {@rest} />
+    <hr style={Style.merge("width:100%;border:none;border-top:1px solid #eaeaea", class_style(assigns))} {@rest} />
     """
   end
 
@@ -405,12 +419,13 @@ defmodule PhoenixEmail.Components do
   @doc """
   A piece of inline code.
   """
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
   def code_inline(assigns) do
-    assigns = put_style(assigns, assigns.style)
+    assigns = put_style(assigns, class_style(assigns))
 
     ~H"""
     <code {@attrs}>{render_slot(@inner_block)}</code>
@@ -436,6 +451,7 @@ defmodule PhoenixEmail.Components do
   attr(:code, :string, required: true)
   attr(:language, :string, default: nil)
   attr(:theme, :map, default: nil)
+  attr(:class, :string, default: nil, doc: "tailwind utilities, see `PhoenixEmail.Tailwind`")
   attr(:style, :any, default: nil)
   attr(:rest, :global)
 
@@ -448,7 +464,7 @@ defmodule PhoenixEmail.Components do
         :highlighted,
         Phoenix.HTML.raw(Highlight.highlight(assigns.code, assigns.language, theme))
       )
-      |> put_style(Style.merge(Map.get(theme, :base), assigns.style))
+      |> put_style(Style.merge(Map.get(theme, :base), class_style(assigns)))
 
     ~H"""
     <pre {@attrs}><code>{@highlighted}</code></pre>
@@ -481,6 +497,12 @@ defmodule PhoenixEmail.Components do
     ~H"""
     <div {@attrs}>{@content_html}</div>
     """
+  end
+
+  # Tailwind classes translate to declarations that the explicit style
+  # attribute can still override by cascade.
+  defp class_style(assigns) do
+    Style.merge(Tailwind.style(assigns.class), assigns.style)
   end
 
   # Merges the style into the :global rest so a nil style is dropped instead
