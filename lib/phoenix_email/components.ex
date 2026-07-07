@@ -499,6 +499,16 @@ defmodule PhoenixEmail.Components do
     """
   end
 
+  @doc """
+  Translates Tailwind utilities to an inline style string.
+
+  Components take a `class` attribute directly; use `tw/1` for raw HTML tags
+  inside templates, where react-email's `<Tailwind>` would also inline:
+
+      <span style={tw("text-black")}>{@username}</span>
+  """
+  defdelegate tw(classes), to: Tailwind, as: :style
+
   # Tailwind classes translate to declarations that the explicit style
   # attribute can still override by cascade.
   defp class_style(assigns) do

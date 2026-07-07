@@ -209,8 +209,11 @@ defmodule PhoenixEmail.Tailwind.Compiler do
     |> String.split(";")
     |> Enum.flat_map(fn declaration ->
       case String.split(declaration, ":", parts: 2) do
-        [property, value] -> [{String.trim(property), String.trim(value)}]
-        _ -> []
+        [property, value] ->
+          [{String.trim(property), value |> String.replace(~r/\s+/, " ") |> String.trim()}]
+
+        _ ->
+          []
       end
     end)
   end
