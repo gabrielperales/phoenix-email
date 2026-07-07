@@ -9,8 +9,6 @@ defmodule PhoenixEmail.Tailwind.Compiler do
   `mix phoenix_email.tailwind`.
   """
 
-  require Logger
-
   @fallback_tailwind_version "4.3.2"
 
   # Logical properties (v4 output) expanded to physical ones, assuming ltr.
