@@ -138,7 +138,9 @@ config :phoenix_email,
   tailwind_bin: "/path/to/tailwindcss"                  # optional, see below
 ```
 
-The binary is resolved from `:tailwind_bin`, the [tailwind](https://hex.pm/packages/tailwind) hex package, `tailwindcss` in `$PATH`, or `npx tailwindcss@3`. Re-run the task after changing classes (wire it into your `assets.build`/`test` aliases). Same rules as Tailwind itself: classes must be literal strings in your source — no `"bg-#{color}"` — and variants (`sm:`, `hover:`) are skipped since they can't be inlined. `class` merges between component defaults and `style`, so explicit styles always win.
+The binary is resolved from `:tailwind_bin`, the [tailwind](https://hex.pm/packages/tailwind) hex package, `tailwindcss` in `$PATH`, or `npx tailwindcss@3`. **Both Tailwind v3 and v4 binaries work** — the version is detected and the post-processing adapts (v4's `oklch()` colors, `calc(var(--spacing) * n)` spacing, `color-mix()` opacity modifiers, and logical properties are all resolved to email-safe values). For v4 use a standalone binary (the hex package downloads one); the npm CLI can't resolve its imports outside a `node_modules`, so the npx fallback stays on v3. With v4 you can also point `:tailwind_config` at your CSS entry point (`@theme`) instead of a JS config.
+
+Re-run the task after changing classes (wire it into your `assets.build`/`test` aliases). Same rules as Tailwind itself: classes must be literal strings in your source — no `"bg-#{color}"` — and variants (`sm:`, `hover:`) are skipped since they can't be inlined. `class` merges between component defaults and `style`, so explicit styles always win.
 
 ## Optional dependencies
 

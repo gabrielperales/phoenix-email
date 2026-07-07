@@ -4,12 +4,26 @@ defmodule PhoenixEmail.Tailwind.Compiler do
   output into the class → inline-declarations map used by
   `PhoenixEmail.Tailwind` at render time.
 
-  Normally invoked through `mix phoenix_email.tailwind`.
+  Works with Tailwind v3 and v4 binaries — the version is detected and both
+  the invocation and the CSS post-processing adapt. Normally invoked through
+  `mix phoenix_email.tailwind`.
   """
 
   require Logger
 
-  @tailwind_version "3.4.17"
+  @npx_tailwind_version "3.4.17"
+
+  # Logical properties (v4 output) expanded to physical ones, assuming ltr.
+  @logical_properties %{
+    "margin-inline" => ~w(margin-left margin-right),
+    "margin-block" => ~w(margin-top margin-bottom),
+    "margin-inline-start" => ~w(margin-left),
+    "margin-inline-end" => ~w(margin-right),
+    "padding-inline" => ~w(padding-left padding-right),
+    "padding-block" => ~w(padding-top padding-bottom),
+    "padding-inline-start" => ~w(padding-left),
+    "padding-inline-end" => ~w(padding-right)
+  }
 
   @doc """
   Compiles the map and writes it to `PhoenixEmail.Tailwind.map_path/0`.
@@ -18,9 +32,9 @@ defmodule PhoenixEmail.Tailwind.Compiler do
 
     * `:content` - glob patterns to scan (default: the `:tailwind_content`
       config key, or `["lib/**/*.ex"]`)
-    * `:config` - path to an existing `tailwind.config.js` to use instead of
-      the generated one (its `content` setting wins; default: the
-      `:tailwind_config` config key)
+    * `:config` - a `tailwind.config.js` (v3, or v4 via `@config`) or a CSS
+      entry point with your `@theme` (v4) to use instead of the generated
+      input (default: the `:tailwind_config` config key)
     * `:output` - where to write the map (default: `map_path/0`)
 
   Returns `{:ok, map}` or `{:error, reason}`.
@@ -41,23 +55,39 @@ defmodule PhoenixEmail.Tailwind.Compiler do
   end
 
   @doc """
-  Parses tailwind's CSS output into a class → inline-declarations map.
+  Parses tailwind's CSS output (v3 or v4) into a class → inline-declarations
+  map.
 
-  Email-oriented post-processing: `--tw-*` custom properties are resolved
-  and dropped, `var()` references substituted, `rem` converted to px (x16),
-  and `rgb(r g b / a)` colors converted to hex. Rules under at-rules
-  (`@media`, `@supports`) and non-class selectors are skipped — variants
-  cannot be inlined.
+  Email-oriented post-processing:
+
+    * custom properties are resolved from the rule itself, `:root`/universal
+      selectors, and `@property` initial values, then dropped; declarations
+      with an unresolvable `var()` are discarded
+    * `calc()` chains of `*` and `/` over numbers are evaluated
+    * `rem` becomes px (x16); `rgb(r g b / a)` and `oklch()` become hex (or
+      `rgba()` when translucent); `color-mix(..., transparent)` becomes
+      `rgba()`
+    * logical properties (`padding-inline`, …) become physical pairs (ltr)
+    * at-rule blocks (`@media`, `@supports`) and pseudo-class selectors are
+      skipped — variants cannot be inlined
+
   """
   def parse(css) do
-    css
-    |> strip_comments()
-    |> strip_at_rules()
-    |> scan_rules()
+    css = strip_comments(css)
+    property_vars = property_initial_values(css)
+
+    rules =
+      css
+      |> preprocess()
+      |> scan_rules()
+
+    global_vars = Map.merge(property_vars, global_vars(rules))
+
+    rules
     |> Enum.flat_map(fn {selector, body} ->
       case class_name(selector) do
         nil -> []
-        class -> declarations(body) |> to_entry(class)
+        class -> body |> declarations(global_vars) |> to_entry(class)
       end
     end)
     |> Map.new()
@@ -68,50 +98,95 @@ defmodule PhoenixEmail.Tailwind.Compiler do
 
   defp strip_comments(css), do: String.replace(css, ~r{/\*.*?\*/}s, "")
 
-  # Removes at-rule blocks (@media, @supports, ...) with balanced braces.
-  defp strip_at_rules(css) do
-    case :binary.match(css, "@") do
-      :nomatch ->
+  # `@property --x { ...; initial-value: v }` blocks feed default values for
+  # the custom properties v4 utilities reference (e.g. --tw-border-style).
+  defp property_initial_values(css) do
+    ~r/@property\s+(--[\w-]+)\s*\{[^{}]*?initial-value:\s*([^;{}]+)/
+    |> Regex.scan(css)
+    |> Map.new(fn [_, name, value] -> {name, String.trim(value)} end)
+  end
+
+  # Unwraps @layer blocks, drops every other at-rule (statement or block)
+  # and nested `&...` selector blocks, until the CSS is a flat list of rules.
+  defp preprocess(css) do
+    next =
+      css
+      |> process_at_rules()
+      |> drop_nested_selectors()
+
+    if next == css, do: next, else: preprocess(next)
+  end
+
+  defp process_at_rules(css) do
+    case Regex.run(~r/@([\w-]+)[^{;]*([{;])/, css, return: :index) do
+      nil ->
         css
 
-      {start, _} ->
-        before = binary_part(css, 0, start)
-        rest = binary_part(css, start, byte_size(css) - start)
-
-        case skip_at_rule(rest) do
-          {:ok, remaining} -> before <> strip_at_rules(remaining)
-          :error -> css
-        end
+      [{rule_start, _}, {name_start, name_length}, {brace_start, 1}] ->
+        name = binary_part(css, name_start, name_length)
+        before = binary_part(css, 0, rule_start)
+        before <> process_at_rule(css, name, brace_start)
     end
   end
 
-  defp skip_at_rule(rest) do
-    case :binary.match(rest, "{") do
-      :nomatch ->
-        :error
+  defp process_at_rule(css, name, brace_start) do
+    case {binary_part(css, brace_start, 1), name} do
+      {";", _name} ->
+        rest = binary_part(css, brace_start + 1, byte_size(css) - brace_start - 1)
+        process_at_rules(rest)
 
-      {open, _} ->
-        skip_block(rest, open + 1, 1)
+      {"{", "layer"} ->
+        {inner, rest} = split_block(css, brace_start + 1)
+        inner <> process_at_rules(rest)
+
+      {"{", _other} ->
+        {_inner, rest} = split_block(css, brace_start + 1)
+        process_at_rules(rest)
     end
   end
 
-  defp skip_block(rest, position, 0),
-    do: {:ok, binary_part(rest, position, byte_size(rest) - position)}
+  # Splits at `position` (just past an opening brace) into the block's inner
+  # content and the remainder after the matching closing brace.
+  defp split_block(css, position), do: split_block(css, position, position, 1)
 
-  defp skip_block(rest, position, _depth) when position >= byte_size(rest), do: {:ok, ""}
+  defp split_block(css, start, position, 0) do
+    inner = binary_part(css, start, position - start - 1)
+    rest = binary_part(css, position, byte_size(css) - position)
+    {inner, rest}
+  end
 
-  defp skip_block(rest, position, depth) do
-    case binary_part(rest, position, 1) do
-      "{" -> skip_block(rest, position + 1, depth + 1)
-      "}" -> skip_block(rest, position + 1, depth - 1)
-      _ -> skip_block(rest, position + 1, depth)
+  defp split_block(css, start, position, depth) do
+    if position >= byte_size(css) do
+      {binary_part(css, start, byte_size(css) - start), ""}
+    else
+      case binary_part(css, position, 1) do
+        "{" -> split_block(css, start, position + 1, depth + 1)
+        "}" -> split_block(css, start, position + 1, depth - 1)
+        _ -> split_block(css, start, position + 1, depth)
+      end
     end
+  end
+
+  defp drop_nested_selectors(css) do
+    String.replace(css, ~r/&[^{}]*\{[^{}]*\}/, "")
   end
 
   defp scan_rules(css) do
     ~r/([^{}]+)\{([^{}]*)\}/
     |> Regex.scan(css)
     |> Enum.map(fn [_, selector, body] -> {String.trim(selector), String.trim(body)} end)
+  end
+
+  # Custom properties declared on :root/:host or universal selectors act as
+  # global defaults (v4 theme variables, v3 --tw-* defaults).
+  defp global_vars(rules) do
+    rules
+    |> Enum.filter(fn {selector, _body} ->
+      String.contains?(selector, ":root") or String.starts_with?(selector, "*")
+    end)
+    |> Enum.flat_map(fn {_selector, body} -> raw_declarations(body) end)
+    |> Enum.filter(fn {property, _value} -> String.starts_with?(property, "--") end)
+    |> Map.new()
   end
 
   # Accepts only simple single-class selectors and unescapes them:
@@ -129,57 +204,231 @@ defmodule PhoenixEmail.Tailwind.Compiler do
 
   defp class_name(_selector), do: nil
 
-  defp declarations(body) do
-    parsed =
-      body
-      |> String.split(";")
-      |> Enum.flat_map(fn declaration ->
-        case String.split(declaration, ":", parts: 2) do
-          [property, value] -> [{String.trim(property), String.trim(value)}]
-          _ -> []
-        end
-      end)
+  defp raw_declarations(body) do
+    body
+    |> String.split(";")
+    |> Enum.flat_map(fn declaration ->
+      case String.split(declaration, ":", parts: 2) do
+        [property, value] -> [{String.trim(property), String.trim(value)}]
+        _ -> []
+      end
+    end)
+  end
 
-    vars = for {"--tw-" <> _ = name, value} <- parsed, into: %{}, do: {name, value}
+  defp declarations(body, global_vars) do
+    parsed = raw_declarations(body)
+
+    local_vars = for {"--" <> _ = name, value} <- parsed, into: %{}, do: {name, value}
+
+    vars = Map.merge(global_vars, local_vars)
 
     parsed
     |> Enum.reject(fn {property, _} -> String.starts_with?(property, "--") end)
     |> Enum.flat_map(fn {property, value} ->
-      case value |> substitute_vars(vars) |> normalize_value() do
+      case value |> resolve_vars(vars) |> normalize_value() do
         nil -> []
-        value -> ["#{property}:#{value}"]
+        value -> expand_property(property, value)
       end
     end)
   end
 
-  # var(--tw-x, default) -> resolved value or the default; var(--tw-x) with
-  # no definition poisons the declaration, which is then dropped.
+  defp expand_property(property, value) do
+    case Map.fetch(@logical_properties, property) do
+      {:ok, properties} -> Enum.map(properties, &"#{&1}:#{value}")
+      :error -> ["#{property}:#{value}"]
+    end
+  end
+
+  # Substitutes var() references (innermost first, so nested defaults like
+  # var(--tw-leading, var(--text-sm--line-height)) resolve in passes) until
+  # stable. An unresolvable var() without default poisons the declaration.
+  defp resolve_vars(value, vars), do: resolve_vars(value, vars, 5)
+
+  defp resolve_vars(value, _vars, 0), do: value
+
+  defp resolve_vars(value, vars, attempts) do
+    next = substitute_vars(value, vars)
+    if next == value, do: next, else: resolve_vars(next, vars, attempts - 1)
+  end
+
   defp substitute_vars(value, vars) do
-    Regex.replace(~r/var\((--[\w-]+)(,\s*([^()]*))?\)/, value, fn _, name, comma_part, default ->
-      cond do
-        Map.has_key?(vars, name) -> Map.fetch!(vars, name)
-        comma_part != "" -> default
-        true -> "__unresolved__"
+    Regex.replace(
+      ~r/var\((--[\w-]+)(,\s*((?:[^()]|\([^()]*\))*))?\)/,
+      value,
+      fn _, name, comma_part, default ->
+        cond do
+          Map.has_key?(vars, name) -> Map.fetch!(vars, name)
+          comma_part != "" -> default
+          true -> "__unresolved__"
+        end
       end
-    end)
+    )
   end
 
   defp normalize_value(value) do
-    if String.contains?(value, "__unresolved__") do
+    if String.contains?(value, "__unresolved__") or String.contains?(value, "var(") do
       nil
     else
       value
+      |> eval_calc()
       |> convert_rem()
+      |> convert_oklch()
+      |> convert_color_mix()
       |> convert_rgb()
     end
   end
 
-  defp convert_rem(value) do
-    Regex.replace(~r/(-?\d*\.?\d+)rem\b/, value, fn _, number ->
-      {rem_value, ""} = Float.parse(normalize_float(number))
-      format_number(rem_value * 16) <> "px"
+  # Evaluates calc() chains of * and / over numbers where at most one operand
+  # carries a unit: calc(0.25rem * 5) -> 1.25rem, calc(1 / 2 * 100%) -> 50%.
+  defp eval_calc(value) do
+    Regex.replace(~r/calc\(([^()]*)\)/, value, fn full, expression ->
+      case eval_expression(expression) do
+        {:ok, result} -> result
+        :error -> full
+      end
     end)
   end
+
+  defp eval_expression(expression) do
+    tokens = Regex.scan(~r/(-?\d*\.?\d+)([a-z%]*)|([*\/])/, expression, capture: :all_but_first)
+
+    with {:ok, first, operations} <- collect_tokens(tokens),
+         {:ok, unit} <- single_unit(tokens),
+         {:ok, result} <- apply_operations(first, operations) do
+      {:ok, format_number(result) <> unit}
+    end
+  end
+
+  defp collect_tokens([[number, _unit] | rest]) when number != "" do
+    with {:ok, operations} <- collect_operations(rest, []) do
+      {:ok, parse_number(number), operations}
+    end
+  end
+
+  defp collect_tokens(_tokens), do: :error
+
+  defp collect_operations([], acc), do: {:ok, Enum.reverse(acc)}
+
+  defp collect_operations([[_, _, operator], [number, _unit] | rest], acc) when number != "" do
+    collect_operations(rest, [{operator, parse_number(number)} | acc])
+  end
+
+  defp collect_operations(_tokens, _acc), do: :error
+
+  defp single_unit(tokens) do
+    tokens
+    |> Enum.flat_map(fn
+      [number, unit] when number != "" and unit != "" -> [unit]
+      _other -> []
+    end)
+    |> Enum.uniq()
+    |> case do
+      [] -> {:ok, ""}
+      [unit] -> {:ok, unit}
+      _many -> :error
+    end
+  end
+
+  defp apply_operations(first, operations) do
+    Enum.reduce_while(operations, {:ok, first}, fn
+      {"*", number}, {:ok, acc} -> {:cont, {:ok, acc * number}}
+      {"/", number}, {:ok, _acc} when number == 0.0 -> {:halt, :error}
+      {"/", number}, {:ok, acc} -> {:cont, {:ok, acc / number}}
+    end)
+  end
+
+  defp convert_rem(value) do
+    Regex.replace(~r/(-?\d*\.?\d+)rem\b/, value, fn _, number ->
+      format_number(parse_number(number) * 16) <> "px"
+    end)
+  end
+
+  # oklch(63.7% 0.237 25.331) -> #fb2c36 (OKLCh -> OKLab -> linear sRGB).
+  defp convert_oklch(value) do
+    Regex.replace(
+      ~r/oklch\(\s*(\d*\.?\d+)(%?)\s+(\d*\.?\d+)\s+(\d*\.?\d+)(?:deg)?\s*(?:\/\s*(\d*\.?\d+)(%?))?\s*\)/,
+      value,
+      fn _, lightness, percent, chroma, hue, alpha, alpha_percent ->
+        lightness = parse_number(lightness)
+        lightness = if percent == "%", do: lightness / 100, else: lightness
+        {r, g, b} = oklch_to_srgb(lightness, parse_number(chroma), parse_number(hue))
+
+        case normalize_alpha(alpha, alpha_percent) do
+          1.0 -> hex(r, g, b)
+          alpha -> "rgba(#{r},#{g},#{b},#{format_number(alpha)})"
+        end
+      end
+    )
+  end
+
+  defp normalize_alpha("", _percent), do: 1.0
+  defp normalize_alpha(alpha, "%"), do: parse_number(alpha) / 100
+  defp normalize_alpha(alpha, _percent), do: parse_number(alpha)
+
+  defp oklch_to_srgb(lightness, chroma, hue) do
+    radians = hue * :math.pi() / 180
+    a = chroma * :math.cos(radians)
+    b = chroma * :math.sin(radians)
+
+    l = :math.pow(lightness + 0.3963377774 * a + 0.2158037573 * b, 3)
+    m = :math.pow(lightness - 0.1055613458 * a - 0.0638541728 * b, 3)
+    s = :math.pow(lightness - 0.0894841775 * a - 1.2914855480 * b, 3)
+
+    red = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+    green = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+    blue = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+
+    {srgb_channel(red), srgb_channel(green), srgb_channel(blue)}
+  end
+
+  defp srgb_channel(linear) do
+    gamma =
+      if linear > 0.0031308 do
+        1.055 * :math.pow(linear, 1 / 2.4) - 0.055
+      else
+        12.92 * linear
+      end
+
+    gamma |> max(0.0) |> min(1.0) |> Kernel.*(255) |> round()
+  end
+
+  # color-mix(in srgb, <color> N%, transparent) -> rgba(color, N/100).
+  defp convert_color_mix(value) do
+    Regex.replace(
+      ~r/color-mix\(in\s+[\w-]+,\s*(#[0-9a-fA-F]{3}\b|#[0-9a-fA-F]{6}\b|rgba?\([^()]*\))\s+(\d*\.?\d+)%\s*,\s*transparent\s*\)/,
+      value,
+      fn full, color, percent ->
+        case color_channels(color) do
+          {r, g, b} -> "rgba(#{r},#{g},#{b},#{format_number(parse_number(percent) / 100)})"
+          nil -> full
+        end
+      end
+    )
+  end
+
+  defp color_channels("#" <> hex) when byte_size(hex) == 3 do
+    hex
+    |> String.graphemes()
+    |> Enum.map(&String.to_integer(&1 <> &1, 16))
+    |> List.to_tuple()
+  end
+
+  defp color_channels("#" <> hex) when byte_size(hex) == 6 do
+    hex
+    |> String.to_charlist()
+    |> Enum.chunk_every(2)
+    |> Enum.map(&List.to_integer(&1, 16))
+    |> List.to_tuple()
+  end
+
+  defp color_channels("rgb" <> _ = color) do
+    case Regex.run(~r/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/, color) do
+      [_, r, g, b] -> {String.to_integer(r), String.to_integer(g), String.to_integer(b)}
+      nil -> nil
+    end
+  end
+
+  defp color_channels(_color), do: nil
 
   # rgb(0 0 0 / 1) -> #000000; alpha < 1 -> rgba(0,0,0,0.5) for older clients.
   defp convert_rgb(value) do
@@ -188,23 +437,27 @@ defmodule PhoenixEmail.Tailwind.Compiler do
       value,
       fn _, r, g, b, alpha ->
         case alpha do
-          "" -> to_hex(r, g, b)
-          "1" -> to_hex(r, g, b)
+          "" -> hex(String.to_integer(r), String.to_integer(g), String.to_integer(b))
+          "1" -> hex(String.to_integer(r), String.to_integer(g), String.to_integer(b))
           alpha -> "rgba(#{r},#{g},#{b},#{alpha})"
         end
       end
     )
   end
 
-  defp to_hex(r, g, b) do
+  defp hex(r, g, b) do
     "#" <>
       Enum.map_join([r, g, b], fn channel ->
         channel
-        |> String.to_integer()
         |> Integer.to_string(16)
         |> String.downcase()
         |> String.pad_leading(2, "0")
       end)
+  end
+
+  defp parse_number(number) do
+    {value, ""} = number |> normalize_float() |> Float.parse()
+    value
   end
 
   defp normalize_float("." <> _ = number), do: "0" <> number
@@ -217,12 +470,13 @@ defmodule PhoenixEmail.Tailwind.Compiler do
     if number == truncated do
       Integer.to_string(truncated)
     else
-      :erlang.float_to_binary(number, [:compact, decimals: 4])
+      :erlang.float_to_binary(number / 1, [:compact, decimals: 4])
     end
   end
 
   defp compile_css(content, config) do
-    with {:ok, command, prefix_args} <- resolve_binary() do
+    with {:ok, command, prefix_args} <- resolve_binary(),
+         {:ok, major} <- detect_version(command, prefix_args) do
       tmp =
         Path.join(
           System.tmp_dir!(),
@@ -232,15 +486,10 @@ defmodule PhoenixEmail.Tailwind.Compiler do
       File.mkdir_p!(tmp)
 
       try do
-        input = Path.join(tmp, "input.css")
         output = Path.join(tmp, "output.css")
-        File.write!(input, "@tailwind utilities;\n")
+        args = build_args(major, tmp, content, config) ++ ["--output", output]
 
-        config_path = config || write_config(tmp, content)
-
-        args = prefix_args ++ ["--config", config_path, "--input", input, "--output", output]
-
-        case System.cmd(command, args, stderr_to_stdout: true) do
+        case System.cmd(command, prefix_args ++ args, stderr_to_stdout: true) do
           {_, 0} -> {:ok, File.read!(output)}
           {out, status} -> {:error, "tailwindcss exited with #{status}: #{out}"}
         end
@@ -250,7 +499,24 @@ defmodule PhoenixEmail.Tailwind.Compiler do
     end
   end
 
-  defp write_config(tmp, content) do
+  defp build_args(3, tmp, content, config) do
+    input = Path.join(tmp, "input.css")
+    File.write!(input, "@tailwind utilities;\n")
+    config_path = config || write_v3_config(tmp, content)
+    ["--config", config_path, "--input", input]
+  end
+
+  defp build_args(4, tmp, content, config) do
+    if config && Path.extname(config) == ".css" do
+      ["--input", Path.expand(config)]
+    else
+      input = Path.join(tmp, "input.css")
+      File.write!(input, v4_input(content, config))
+      ["--input", input]
+    end
+  end
+
+  defp write_v3_config(tmp, content) do
     globs = Enum.map_join(content, ", ", &inspect(Path.expand(&1)))
     config_path = Path.join(tmp, "tailwind.config.js")
 
@@ -264,9 +530,39 @@ defmodule PhoenixEmail.Tailwind.Compiler do
     config_path
   end
 
+  defp v4_input(content, config) do
+    sources = Enum.map_join(content, "\n", &"@source #{inspect(Path.expand(&1))};")
+    legacy_config = if config, do: "@config #{inspect(Path.expand(config))};\n", else: ""
+
+    """
+    @layer theme, utilities;
+    @import "tailwindcss/theme.css" layer(theme);
+    @import "tailwindcss/utilities.css" layer(utilities) source(none);
+    #{legacy_config}#{sources}
+    """
+  end
+
+  defp detect_version(command, prefix_args) do
+    case System.cmd(command, prefix_args ++ ["--help"], stderr_to_stdout: true) do
+      {out, 0} ->
+        case Regex.run(~r/tailwindcss v(\d+)\./, out) do
+          [_, major] when major in ~w(3 4) -> {:ok, String.to_integer(major)}
+          [_, major] -> {:error, "unsupported tailwindcss major version #{major}"}
+          nil -> {:error, "could not detect the tailwindcss version from --help"}
+        end
+
+      {out, status} ->
+        {:error, "tailwindcss --help exited with #{status}: #{out}"}
+    end
+  end
+
   @doc """
   Finds the tailwind binary: `:tailwind_bin` config, the tailwind hex
-  package, `tailwindcss` in `$PATH`, or `npx tailwindcss@#{@tailwind_version}`.
+  package, `tailwindcss` in `$PATH`, or `npx tailwindcss@#{@npx_tailwind_version}`.
+
+  For Tailwind v4 use a standalone binary (the hex package downloads one) —
+  the npm CLI needs a `node_modules` next to the input to resolve its
+  imports, so the npx fallback stays on v3.
   """
   def resolve_binary do
     cond do
@@ -280,7 +576,7 @@ defmodule PhoenixEmail.Tailwind.Compiler do
         {:ok, bin, []}
 
       npx = System.find_executable("npx") ->
-        {:ok, npx, ["--yes", "tailwindcss@#{@tailwind_version}"]}
+        {:ok, npx, ["--yes", "tailwindcss@#{@npx_tailwind_version}"]}
 
       true ->
         {:error,

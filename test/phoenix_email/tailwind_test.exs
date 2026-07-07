@@ -167,6 +167,120 @@ defmodule PhoenixEmail.TailwindTest do
     end
   end
 
+  describe "Compiler.parse/2 with tailwind v4 output" do
+    # Condensed from real `tailwindcss v4.3.2` output.
+    @v4_css """
+    /*! tailwindcss v4.3.2 | MIT License | https://tailwindcss.com */
+    @layer properties;
+    @layer theme, utilities;
+    @layer theme {
+      :root, :host {
+        --color-red-500: oklch(63.7% 0.237 25.331);
+        --color-black: #000;
+        --color-white: #fff;
+        --spacing: 0.25rem;
+        --text-sm: 0.875rem;
+        --text-sm--line-height: calc(1.25 / 0.875);
+        --radius-lg: 0.5rem;
+        --font-weight-semibold: 600;
+      }
+    }
+    @layer utilities {
+      .mx-auto {
+        margin-inline: auto;
+      }
+      .-mt-2 {
+        margin-top: calc(var(--spacing) * -2);
+      }
+      .w-1\\/2 {
+        width: calc(1 / 2 * 100%);
+      }
+      .rounded-lg {
+        border-radius: var(--radius-lg);
+      }
+      .border {
+        border-style: var(--tw-border-style);
+        border-width: 1px;
+      }
+      .bg-red-500 {
+        background-color: var(--color-red-500);
+      }
+      .bg-white\\/50 {
+        background-color: color-mix(in srgb, #fff 50%, transparent);
+        @supports (color: color-mix(in lab, red, red)) {
+          background-color: color-mix(in oklab, var(--color-white) 50%, transparent);
+        }
+      }
+      .px-5 {
+        padding-inline: calc(var(--spacing) * 5);
+      }
+      .text-sm {
+        font-size: var(--text-sm);
+        line-height: var(--tw-leading, var(--text-sm--line-height));
+      }
+      .font-semibold {
+        --tw-font-weight: var(--font-weight-semibold);
+        font-weight: var(--font-weight-semibold);
+      }
+      .hover\\:underline {
+        &:hover {
+          @media (hover: hover) {
+            text-decoration-line: underline;
+          }
+        }
+      }
+      .sm\\:flex {
+        @media (width >= 40rem) {
+          display: flex;
+        }
+      }
+    }
+    @property --tw-border-style {
+      syntax: "*";
+      inherits: false;
+      initial-value: solid;
+    }
+    """
+
+    test "resolves theme variables, calc, and @property initial values" do
+      map = Compiler.parse(@v4_css)
+
+      assert map["px-5"] == "padding-left:20px;padding-right:20px"
+      assert map["-mt-2"] == "margin-top:-8px"
+      assert map["mx-auto"] == "margin-left:auto;margin-right:auto"
+      assert map["w-1/2"] == "width:50%"
+      assert map["rounded-lg"] == "border-radius:8px"
+      assert map["border"] == "border-style:solid;border-width:1px"
+      assert map["font-semibold"] == "font-weight:600"
+    end
+
+    test "converts oklch theme colors to hex" do
+      map = Compiler.parse(@v4_css)
+
+      # cross-checked against an independent oklch->srgb implementation
+      assert map["bg-red-500"] == "background-color:#fb2c36"
+    end
+
+    test "converts color-mix with transparent to rgba and drops the @supports variant" do
+      map = Compiler.parse(@v4_css)
+
+      assert map["bg-white/50"] == "background-color:rgba(255,255,255,0.5)"
+    end
+
+    test "resolves nested var() defaults to an evaluated line-height" do
+      map = Compiler.parse(@v4_css)
+
+      assert map["text-sm"] == "font-size:14px;line-height:1.4286"
+    end
+
+    test "still skips variants" do
+      map = Compiler.parse(@v4_css)
+
+      refute Map.has_key?(map, "sm:flex")
+      refute Map.has_key?(map, "hover:underline")
+    end
+  end
+
   describe "end to end with the tailwindcss binary" do
     @describetag :tailwind_bin
 
@@ -192,6 +306,48 @@ defmodule PhoenixEmail.TailwindTest do
       refute Map.has_key?(map, "sm:flex")
 
       assert File.exists?(Path.join(tmp, "tailwind.map"))
+    end
+
+    @tag timeout: 120_000
+    test "compiles with a v4 standalone binary when TAILWIND_V4_BIN is set" do
+      case System.get_env("TAILWIND_V4_BIN") do
+        nil ->
+          :ok
+
+        bin ->
+          previous = Application.get_env(:phoenix_email, :tailwind_bin)
+          Application.put_env(:phoenix_email, :tailwind_bin, bin)
+
+          on_exit(fn ->
+            case previous do
+              nil -> Application.delete_env(:phoenix_email, :tailwind_bin)
+              value -> Application.put_env(:phoenix_email, :tailwind_bin, value)
+            end
+          end)
+
+          tmp =
+            Path.join(System.tmp_dir!(), "phx_email_tw4_#{System.unique_integer([:positive])}")
+
+          File.mkdir_p!(tmp)
+          on_exit(fn -> File.rm_rf!(tmp) end)
+
+          content_file = Path.join(tmp, "emails.ex")
+
+          File.write!(content_file, """
+          # class="bg-red-500 text-white px-5 py-3 rounded-lg max-w-[465px] w-1/2 sm:flex"
+          """)
+
+          {:ok, map} =
+            Compiler.run(content: [content_file], output: Path.join(tmp, "tailwind.map"))
+
+          assert map["bg-red-500"] == "background-color:#fb2c36"
+          assert map["px-5"] == "padding-left:20px;padding-right:20px"
+          assert map["py-3"] == "padding-top:12px;padding-bottom:12px"
+          assert map["rounded-lg"] == "border-radius:8px"
+          assert map["max-w-[465px]"] == "max-width:465px"
+          assert map["w-1/2"] == "width:50%"
+          refute Map.has_key?(map, "sm:flex")
+      end
     end
   end
 end
