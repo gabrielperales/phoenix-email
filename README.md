@@ -95,6 +95,21 @@ There is no style-object DSL: styles are plain CSS strings, inline, exactly what
 <.text style="color:#525f7f;font-size:16px">…</.text>
 ```
 
+## Tailwind classes
+
+Every visual component also accepts a `class` attribute with Tailwind utilities, translated to inline styles at render time — the equivalent of react-email's `<Tailwind>` wrapper, without running the Tailwind compiler:
+
+```heex
+<.container class="border border-gray-200 rounded-lg p-5 max-w-[465px]">
+  <.heading as="h1" class="text-2xl text-black text-center font-normal">Join the team</.heading>
+  <.button href={@url} class="bg-black text-white text-xs font-semibold rounded px-5 py-3">
+    Join
+  </.button>
+</.container>
+```
+
+Supported: layout, the spacing scale (including negatives and arbitrary values like `p-[12px]`), sizing (`w-full`, `w-1/2`, `max-w-[465px]`), typography (`text-sm`, `font-semibold`, `leading-6`, …), the full default color palette (`bg-*`, `text-*`, `border-*`), borders and radius. Variants (`sm:`, `hover:`, `dark:`) are not supported — most email clients ignore them anyway. Unknown classes are skipped with a logged warning. `class` merges between the component defaults and `style`, so explicit styles always win. See `PhoenixEmail.Tailwind` for the full list.
+
 ## Optional dependencies
 
 | Feature | Add to your deps |
