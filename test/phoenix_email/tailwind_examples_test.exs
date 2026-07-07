@@ -16,11 +16,11 @@ defmodule PhoenixEmail.TailwindExamplesTest do
 
   @assigns %{
     username: "alanturing",
-    user_image: "https://react.email/static/vercel-user.png",
+    user_image: "https://demo.react.email/static/vercel-user.png",
     invited_by_username: "Alan",
     invited_by_email: "alan.turing@example.com",
     team_name: "Enigma",
-    team_image: "https://react.email/static/vercel-team.png",
+    team_image: "https://demo.react.email/static/vercel-team.png",
     invite_link: "https://vercel.com",
     invite_from_ip: "204.13.186.218",
     invite_from_location: "São Paulo, Brazil"

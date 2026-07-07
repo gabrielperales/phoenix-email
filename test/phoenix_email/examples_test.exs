@@ -16,8 +16,8 @@ defmodule PhoenixEmail.ExamplesTest do
     invited_by_username: "Alan",
     invited_by_email: "alan.turing@example.com",
     team_name: "Enigma",
-    user_image: "https://react.email/static/vercel-user.png",
-    team_image: "https://react.email/static/vercel-team.png",
+    user_image: "https://demo.react.email/static/vercel-user.png",
+    team_image: "https://demo.react.email/static/vercel-team.png",
     invite_link: "https://vercel.com/teams/invite/foo",
     invite_from_ip: "204.13.186.218",
     invite_from_location: "São Paulo, Brazil"

@@ -14,7 +14,7 @@ defmodule PhoenixEmail.TailwindEmails do
         <.preview>Join {@invited_by_username} on Vercel</.preview>
         <.container class="mx-auto my-[40px] max-w-[465px] rounded border border-[#eaeaea] border-solid p-[20px]">
           <.section class="mt-[32px]">
-            <.img src="https://react.email/static/vercel-logo.png" width="40" height="37" alt="Vercel Logo" class="mx-auto my-0" />
+            <.img src="https://demo.react.email/static/vercel-logo.png" width="40" height="37" alt="Vercel Logo" class="mx-auto my-0" />
           </.section>
           <.heading class="mx-0 my-[30px] p-0 text-center font-normal text-[24px] text-black">
             Join <strong>{@team_name}</strong> on <strong>Vercel</strong>
@@ -29,7 +29,7 @@ defmodule PhoenixEmail.TailwindEmails do
                 <.img class="rounded-full" src={@user_image} width="64" height="64" alt="profile picture" />
               </.column>
               <.column align="center">
-                <.img src="https://react.email/static/vercel-arrow.png" width="12" height="9" alt="Arrow indicating invitation" />
+                <.img src="https://demo.react.email/static/vercel-arrow.png" width="12" height="9" alt="Arrow indicating invitation" />
               </.column>
               <.column align="left">
                 <.img class="rounded-full" src={@team_image} width="64" height="64" alt="team logo" />
