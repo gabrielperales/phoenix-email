@@ -2,13 +2,57 @@ defmodule PhoenixEmail.Style do
   @moduledoc false
   # Helpers to work with inline CSS style strings.
 
-  @doc """
-  Merges two CSS style strings, `extra` last so it wins by cascade.
+  # CSS properties whose numeric values are unitless; every other number is
+  # rendered in px, mirroring React's style-object behavior.
+  @unitless ~w(animation-iteration-count aspect-ratio border-image-outset
+    border-image-slice border-image-width column-count columns flex flex-grow
+    flex-shrink font-weight grid-area grid-column grid-column-end
+    grid-column-start grid-row grid-row-end grid-row-start line-clamp
+    line-height opacity order orphans tab-size widows z-index zoom)
 
-  Returns `nil` when both are blank so the `style` attribute is omitted.
+  @doc """
+  Converts a style given as a map or keyword list into an inline CSS string.
+
+  Property names may be atoms or strings, in snake_case, camelCase, or
+  kebab-case (`:font_size`, `"fontSize"`, and `"font-size"` are equivalent).
+  Numeric values get a `px` suffix except for unitless properties such as
+  `line-height` or `opacity`. Entries with a `nil` or `false` value are
+  dropped, which allows conditional declarations.
+
+  Maps are rendered with their properties sorted so output is deterministic;
+  use a keyword list (or list of tuples) to control declaration order.
+
+  Strings pass through untouched and blank styles become `nil` so the
+  `style` attribute is omitted.
+  """
+  def to_css(nil), do: nil
+  def to_css(style) when is_binary(style), do: style
+
+  def to_css(style) when is_map(style) do
+    style
+    |> Enum.map(fn {property, value} -> {property_name(property), value} end)
+    |> Enum.sort()
+    |> to_css()
+  end
+
+  def to_css(style) when is_list(style) do
+    style
+    |> Enum.reject(fn {_property, value} -> value in [nil, false] end)
+    |> Enum.map_join(";", fn {property, value} ->
+      property = property_name(property)
+      "#{property}:#{css_value(property, value)}"
+    end)
+    |> presence()
+  end
+
+  @doc """
+  Merges two styles, `extra` last so it wins by cascade.
+
+  Accepts strings, maps, and keyword lists (see `to_css/1`). Returns `nil`
+  when both are blank so the `style` attribute is omitted.
   """
   def merge(base, extra) do
-    case {presence(base), presence(extra)} do
+    case {presence(to_css(base)), presence(to_css(extra))} do
       {nil, nil} -> nil
       {base, nil} -> base
       {nil, extra} -> extra
@@ -17,12 +61,15 @@ defmodule PhoenixEmail.Style do
   end
 
   @doc """
-  Parses a style string into a list of `{property, value}` tuples.
+  Parses a style (string, map, or keyword list) into a list of
+  `{property, value}` tuples.
   """
   def declarations(nil), do: []
 
   def declarations(style) do
     style
+    |> to_css()
+    |> Kernel.||("")
     |> String.split(";")
     |> Enum.flat_map(fn declaration ->
       case String.split(declaration, ":", parts: 2) do
@@ -99,6 +146,25 @@ defmodule PhoenixEmail.Style do
     {number, _rest} = Float.parse(string)
     number
   end
+
+  defp property_name(property) when is_atom(property), do: property_name(Atom.to_string(property))
+
+  defp property_name(property) when is_binary(property) do
+    property
+    |> String.replace(~r/([a-z\d])([A-Z])/, "\\1-\\2")
+    |> String.replace("_", "-")
+    |> String.downcase()
+  end
+
+  defp css_value(property, value) when is_number(value) do
+    if property in @unitless or String.starts_with?(property, "--") do
+      to_string(value)
+    else
+      "#{value}px"
+    end
+  end
+
+  defp css_value(_property, value), do: to_string(value)
 
   defp presence(nil), do: nil
 

@@ -85,15 +85,30 @@ new()
 | `<.code_block>` | `<pre><code>` | Inline-styled syntax highlighting via optional [makeup](https://hex.pm/packages/makeup) |
 | `<.markdown>` | styled HTML | Markdown with per-tag inline styles via optional [earmark_parser](https://hex.pm/packages/earmark_parser) |
 
-All components accept a `style` attribute with an inline CSS string. Component defaults are merged with your style, yours last, so you can override anything by cascade. Any other HTML attribute is forwarded to the underlying tag.
+All components accept a `style` attribute with an inline CSS string or a style object. Component defaults are merged with your style, yours last, so you can override anything by cascade. Any other HTML attribute is forwarded to the underlying tag.
 
 ## Styling
 
-There is no style-object DSL: styles are plain CSS strings, inline, exactly what email clients require.
+Styles always render as plain inline CSS, exactly what email clients require. You can write them as CSS strings:
 
 ```heex
 <.text style="color:#525f7f;font-size:16px">…</.text>
 ```
+
+or as style objects — maps or keyword lists:
+
+```heex
+<.text style={%{color: "#525f7f", font_size: 16}}>…</.text>
+<.section style={[padding: 24, background_color: "#f6f8fa"]}>…</.section>
+```
+
+Property names may be atoms or strings in snake_case, camelCase, or kebab-case (`:font_size`, `"fontSize"`, and `"font-size"` all work), so react-email styles can be pasted as-is. Numbers get a `px` suffix except for unitless properties such as `line-height`, `opacity`, or `font-weight`. Entries with a `nil` or `false` value are dropped, which makes conditional declarations easy:
+
+```heex
+<.text style={%{color: "#525f7f", font_weight: @urgent && 700}}>…</.text>
+```
+
+Maps render their declarations sorted by property so output is deterministic; use a keyword list when declaration order matters (e.g. a shorthand followed by a longhand override).
 
 ## Optional dependencies
 

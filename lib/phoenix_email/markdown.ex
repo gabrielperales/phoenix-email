@@ -46,7 +46,8 @@ defmodule PhoenixEmail.Markdown do
   Converts a markdown string into email-safe HTML iodata.
 
   `custom_styles` is a map from tag name (atom or string) to an inline CSS
-  string, merged over `default_styles/0`.
+  string or style object (map or keyword list), merged over
+  `default_styles/0`.
   """
   def to_html(markdown, custom_styles \\ %{}) do
     unless Code.ensure_loaded?(EarmarkParser) do
@@ -68,7 +69,7 @@ defmodule PhoenixEmail.Markdown do
   end
 
   defp normalize_styles(styles) do
-    Map.new(styles, fn {tag, style} -> {to_string(tag), style} end)
+    Map.new(styles, fn {tag, style} -> {to_string(tag), PhoenixEmail.Style.to_css(style)} end)
   end
 
   defp render_nodes(nodes, styles, parent) do
