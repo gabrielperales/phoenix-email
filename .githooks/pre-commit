@@ -1,0 +1,18 @@
+#!/bin/sh
+# Pre-commit checks: formatting and credo.
+# Enable with: git config core.hooksPath .githooks
+set -e
+
+echo "pre-commit: mix format --check-formatted"
+mix format --check-formatted || {
+  echo ""
+  echo "Formatting check failed. Run 'mix format' and stage the changes."
+  exit 1
+}
+
+echo "pre-commit: mix credo --strict"
+mix credo --strict || {
+  echo ""
+  echo "Credo found issues. Fix them before committing."
+  exit 1
+}
