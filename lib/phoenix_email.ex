@@ -84,7 +84,12 @@ defmodule PhoenixEmail do
   See `render/2` for the options.
   """
   def render(fun, assigns, opts) when is_function(fun, 1) do
-    assigns |> Map.new() |> fun.() |> do_render(opts)
+    assigns
+    |> Map.new()
+    # so assign/2,3 and assign_new/3 work inside email functions
+    |> Map.put_new(:__changed__, nil)
+    |> fun.()
+    |> do_render(opts)
   end
 
   defp do_render(rendered, opts) do
