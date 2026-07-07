@@ -33,6 +33,8 @@ defmodule PhoenixEmail.Components do
   import Phoenix.Component, except: [link: 1]
 
   alias Phoenix.HTML.Safe
+  alias PhoenixEmail.Highlight
+  alias PhoenixEmail.Markdown
   alias PhoenixEmail.Style
 
   @preview_max_length 150
@@ -204,7 +206,7 @@ defmodule PhoenixEmail.Components do
   A column (`<td>`) inside a `<.row>`.
   """
   attr(:style, :string, default: nil)
-  attr(:rest, :global)
+  attr(:rest, :global, include: ~w(align valign width height bgcolor))
   slot(:inner_block, required: true)
 
   def column(assigns) do
@@ -397,6 +399,87 @@ defmodule PhoenixEmail.Components do
     assigns = assign(assigns, :style_tag, Phoenix.HTML.raw(["<style>\n", css, "</style>"]))
 
     ~H"{@style_tag}"
+  end
+
+  @doc """
+  A piece of inline code.
+  """
+  attr(:style, :string, default: nil)
+  attr(:rest, :global)
+  slot(:inner_block, required: true)
+
+  def code_inline(assigns) do
+    assigns = put_style(assigns, assigns.style)
+
+    ~H"""
+    <code {@attrs}>{render_slot(@inner_block)}</code>
+    """
+  end
+
+  @doc """
+  A block of code with inline-styled syntax highlighting.
+
+  Highlighting requires the optional `:makeup` dependency plus a lexer for
+  the language (for example `:makeup_elixir`); without them — or for unknown
+  languages — the code renders escaped but unstyled.
+
+  The theme is a map from makeup token type to inline CSS, plus a `:base`
+  entry for the `<pre>` tag. See `PhoenixEmail.Highlight.default_theme/0`.
+
+      <.code_block language="elixir" code={~S'''
+      defmodule Hello do
+        def world, do: :ok
+      end
+      '''} />
+  """
+  attr(:code, :string, required: true)
+  attr(:language, :string, default: nil)
+  attr(:theme, :map, default: nil)
+  attr(:style, :string, default: nil)
+  attr(:rest, :global)
+
+  def code_block(assigns) do
+    theme = assigns.theme || Highlight.default_theme()
+
+    assigns =
+      assigns
+      |> assign(
+        :highlighted,
+        Phoenix.HTML.raw(Highlight.highlight(assigns.code, assigns.language, theme))
+      )
+      |> put_style(Style.merge(Map.get(theme, :base), assigns.style))
+
+    ~H"""
+    <pre {@attrs}><code>{@highlighted}</code></pre>
+    """
+  end
+
+  @doc """
+  Markdown rendered as email-safe HTML with inline styles.
+
+  Requires the optional `:earmark_parser` dependency. Override the default
+  per-tag styles with the `styles` map (tag name to inline CSS); see
+  `PhoenixEmail.Markdown.default_styles/0`.
+
+      <.markdown content={@changelog} styles={%{h1: "color:#5e6ad2"}} />
+  """
+  attr(:content, :string, required: true)
+  attr(:styles, :map, default: %{})
+  attr(:container_style, :string, default: nil)
+  attr(:rest, :global)
+
+  def markdown(assigns) do
+    assigns =
+      assigns
+      |> assign(
+        :content_html,
+        Phoenix.HTML.raw(Markdown.to_html(assigns.content, assigns.styles))
+      )
+      |> put_style(assigns.container_style)
+
+    ~H"""
+    <div {@attrs}>{@content_html}</div>
+    """
   end
 
   # Merges the style into the :global rest so a nil style is dropped instead

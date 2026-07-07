@@ -32,6 +32,12 @@ defmodule PhoenixEmail.MixProject do
   defp deps do
     [
       {:phoenix_live_view, "~> 1.0"},
+      # Optional integrations
+      {:makeup, "~> 1.1", optional: true},
+      {:makeup_elixir, "~> 1.0", optional: true},
+      {:earmark_parser, "~> 1.4", optional: true},
+      {:swoosh, "~> 1.16", optional: true},
+      # Dev/test tooling
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

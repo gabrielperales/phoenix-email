@@ -51,7 +51,7 @@ html = PhoenixEmail.render(&MyApp.Emails.welcome/1, %{name: "Ada", url: "https:/
 text = PhoenixEmail.render(&MyApp.Emails.welcome/1, %{name: "Ada", url: "https://example.com/start"}, plain_text: true)
 ```
 
-And hand both to your mailer, for example with [Swoosh](https://hexdocs.pm/swoosh):
+And hand both to your mailer. With the optional [Swoosh](https://hexdocs.pm/swoosh) integration (add `{:swoosh, "~> 1.16"}` to your deps):
 
 ```elixir
 import Swoosh.Email
@@ -60,8 +60,7 @@ new()
 |> to({user.name, user.email})
 |> from({"MyApp", "hello@myapp.com"})
 |> subject("Welcome!")
-|> html_body(html)
-|> text_body(text)
+|> PhoenixEmail.Swoosh.render_body(&MyApp.Emails.welcome/1, %{name: user.name, url: url})
 ```
 
 ## Components
@@ -82,6 +81,9 @@ new()
 | `<.img>` | `<img>` | `display:block` + border/outline resets |
 | `<.hr>` | `<hr>` | |
 | `<.font>` | `<style>` with `@font-face` | Web fonts with `mso-font-alt` fallback; place inside `<.head>` |
+| `<.code_inline>` | `<code>` | |
+| `<.code_block>` | `<pre><code>` | Inline-styled syntax highlighting via optional [makeup](https://hex.pm/packages/makeup) |
+| `<.markdown>` | styled HTML | Markdown with per-tag inline styles via optional [earmark_parser](https://hex.pm/packages/earmark_parser) |
 
 All components accept a `style` attribute with an inline CSS string. Component defaults are merged with your style, yours last, so you can override anything by cascade. Any other HTML attribute is forwarded to the underlying tag.
 
@@ -92,6 +94,16 @@ There is no style-object DSL: styles are plain CSS strings, inline, exactly what
 ```heex
 <.text style="color:#525f7f;font-size:16px">…</.text>
 ```
+
+## Optional dependencies
+
+| Feature | Add to your deps |
+| --- | --- |
+| `<.code_block>` highlighting | `{:makeup, "~> 1.1"}` plus a lexer, e.g. `{:makeup_elixir, "~> 1.0"}` |
+| `<.markdown>` | `{:earmark_parser, "~> 1.4"}` |
+| `PhoenixEmail.Swoosh.render_body/3` | `{:swoosh, "~> 1.16"}` |
+
+Everything degrades gracefully: without makeup the code block renders unstyled, without earmark_parser the markdown component raises with instructions, and `PhoenixEmail.Swoosh` is only compiled when swoosh is present.
 
 ## Plain text
 
