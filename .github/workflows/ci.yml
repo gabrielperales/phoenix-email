@@ -20,10 +20,14 @@ jobs:
           - elixir: "1.15"
             otp: "26"
             lint: false
-          # Latest, where formatting/lint output is canonical
+          # Where the code is developed; formatting/lint output is canonical
           - elixir: "1.19"
             otp: "27"
             lint: true
+          # Latest release
+          - elixir: "1.20"
+            otp: "28"
+            lint: false
 
     steps:
       - uses: actions/checkout@v4
