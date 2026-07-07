@@ -5,9 +5,10 @@ defmodule PhoenixEmail.Components do
 
   Every component renders client-compatible HTML (tables for layout, inline
   styles, MSO conditional comments for Outlook) and accepts a `style`
-  attribute with an inline CSS string. Default styles are merged with the
-  user's, user styles last so they win by cascade. All other HTML attributes
-  are forwarded to the underlying tag.
+  attribute with either an inline CSS string or a style object (map or
+  keyword list), e.g. `style={%{"font-size" => "14px", padding: 12}}`.
+  Default styles are merged with the user's, user styles last so they win
+  by cascade. All other HTML attributes are forwarded to the underlying tag.
 
       use PhoenixEmail
 
@@ -76,7 +77,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   The `<body>` of the email.
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -121,7 +122,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   Centered layout table that caps the email width at 37.5em (600px).
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -149,7 +150,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   Full-width layout table used to group content into blocks.
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -178,7 +179,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   A table row. Put `<.column>` components in the slot.
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -205,7 +206,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   A column (`<td>`) inside a `<.row>`.
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global, include: ~w(align valign width height bgcolor))
   slot(:inner_block, required: true)
 
@@ -224,7 +225,7 @@ defmodule PhoenixEmail.Components do
   `mr`, `mb` and `ml`. Numbers are treated as px; strings are used as-is.
   """
   attr(:as, :string, default: "h1", values: ~w(h1 h2 h3 h4 h5 h6))
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:m, :any, default: nil)
   attr(:mx, :any, default: nil)
   attr(:my, :any, default: nil)
@@ -246,7 +247,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   A paragraph of text.
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -261,7 +262,7 @@ defmodule PhoenixEmail.Components do
   """
   attr(:href, :string, required: true)
   attr(:target, :string, default: "_blank")
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -286,7 +287,7 @@ defmodule PhoenixEmail.Components do
   """
   attr(:href, :string, required: true)
   attr(:target, :string, default: nil)
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -329,7 +330,7 @@ defmodule PhoenixEmail.Components do
   attr(:alt, :string, default: nil)
   attr(:width, :any, default: nil)
   attr(:height, :any, default: nil)
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
 
   def img(assigns) do
@@ -348,7 +349,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   A horizontal divider.
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
 
   def hr(assigns) do
@@ -404,7 +405,7 @@ defmodule PhoenixEmail.Components do
   @doc """
   A piece of inline code.
   """
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
   slot(:inner_block, required: true)
 
@@ -435,7 +436,7 @@ defmodule PhoenixEmail.Components do
   attr(:code, :string, required: true)
   attr(:language, :string, default: nil)
   attr(:theme, :map, default: nil)
-  attr(:style, :string, default: nil)
+  attr(:style, :any, default: nil)
   attr(:rest, :global)
 
   def code_block(assigns) do
@@ -465,7 +466,7 @@ defmodule PhoenixEmail.Components do
   """
   attr(:content, :string, required: true)
   attr(:styles, :map, default: %{})
-  attr(:container_style, :string, default: nil)
+  attr(:container_style, :any, default: nil)
   attr(:rest, :global)
 
   def markdown(assigns) do
@@ -485,7 +486,7 @@ defmodule PhoenixEmail.Components do
   # Merges the style into the :global rest so a nil style is dropped instead
   # of rendering an empty style="" attribute.
   defp put_style(assigns, style) do
-    assign(assigns, :attrs, Map.put(assigns.rest, :style, style))
+    assign(assigns, :attrs, Map.put(assigns.rest, :style, Style.to_css(style)))
   end
 
   defp slot_text(inner_block) do
