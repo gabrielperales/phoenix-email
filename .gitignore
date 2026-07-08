@@ -16,6 +16,13 @@
 # If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump
 
+# Lexical LSP artifacts.
+/.lexical/
+
+# Dexter LSP index (self-ignored via .dexter/.gitignore, listed for clarity).
+/.dexter/
+/.dexter.db*
+
 # Also ignore archive artifacts (built via "mix archive.build").
 *.ez
 

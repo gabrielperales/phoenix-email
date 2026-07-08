@@ -2,7 +2,7 @@ defmodule PhoenixEmail.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/gabrielperales/phoenix_email"
+  @source_url "https://github.com/gabrielperales/phoenix-email"
 
   def project do
     [
@@ -54,7 +54,7 @@ defmodule PhoenixEmail.MixProject do
     [
       main: "PhoenixEmail",
       source_ref: "v#{@version}",
-      extras: ["README.md"]
+      extras: ["README.md", "CHANGELOG.md"]
     ]
   end
 end
