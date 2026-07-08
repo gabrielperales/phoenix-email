@@ -1,0 +1,13 @@
+# Sampo configuration
+version = 1
+
+[git]
+default_branch = "main"
+tag_format = "v{version}"
+
+[github]
+repository = "gabrielperales/phoenix-email"
+
+[changelog]
+show_commit_hash = true
+show_acknowledgments = true

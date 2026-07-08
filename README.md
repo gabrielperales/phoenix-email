@@ -165,6 +165,25 @@ mix credo --strict
 mix format --check-formatted
 ```
 
+### Releasing
+
+Releases are automated with [Sampo](https://github.com/bruits/sampo). If your PR
+changes user-facing behavior, add a changeset before opening it:
+
+```sh
+sampo add
+```
+
+Pick the bump level (`patch` / `minor` / `major`) and describe the change from the
+user's perspective — that text goes verbatim into `CHANGELOG.md`. The changeset is
+a small markdown file under `.sampo/changesets/` that gets committed with your PR.
+Docs-only or CI-only changes don't need one.
+
+On every push to `main`, a GitHub Action collects pending changesets into a
+"Release" PR that bumps the version in `mix.exs` and updates `CHANGELOG.md`.
+Merging that PR publishes the package to Hex and creates the git tag and GitHub
+Release automatically.
+
 ## License
 
 MIT
