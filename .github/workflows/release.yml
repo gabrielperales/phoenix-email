@@ -27,6 +27,9 @@ jobs:
           elixir-version: "1.19"
           otp-version: "27"
 
+      - name: Install dependencies
+        run: mix deps.get
+
       # `auto` mode: prepares/refreshes the Release PR while changesets
       # exist, publishes to Hex and tags once that PR is merged.
       - uses: bruits/sampo/crates/sampo-github-action@cargo-sampo-github-action-v0.17.0
