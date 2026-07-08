@@ -54,7 +54,7 @@ defmodule PhoenixEmail.MixProject do
     [
       main: "PhoenixEmail",
       source_ref: "v#{@version}",
-      extras: ["README.md"]
+      extras: ["README.md", "CHANGELOG.md"]
     ]
   end
 end
