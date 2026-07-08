@@ -519,7 +519,7 @@ defmodule PhoenixEmail.Tailwind.Compiler do
         output = Path.join(tmp, "output.css")
         args = build_args(major, tmp, content, config) ++ ["--output", output]
 
-        case System.cmd(command, prefix_args ++ args, stderr_to_stdout: true) do
+        case cmd(command, prefix_args ++ args) do
           {_, 0} -> {:ok, File.read!(output)}
           {out, status} -> {:error, "tailwindcss exited with #{status}: #{out}"}
         end
@@ -573,9 +573,9 @@ defmodule PhoenixEmail.Tailwind.Compiler do
   end
 
   defp detect_version(command, prefix_args) do
-    case System.cmd(command, prefix_args ++ ["--help"], stderr_to_stdout: true) do
+    case cmd(command, prefix_args ++ ["--help"]) do
       {out, 0} ->
-        case Regex.run(~r/tailwindcss v(\d+)\./, out) do
+        case Regex.run(~r/tailwindcss v(\d+)\./, strip_ansi(out)) do
           [_, major] when major in ~w(3 4) -> {:ok, String.to_integer(major)}
           [_, major] -> {:error, "unsupported tailwindcss major version #{major}"}
           nil -> {:error, "could not detect the tailwindcss version from --help"}
@@ -585,6 +585,15 @@ defmodule PhoenixEmail.Tailwind.Compiler do
         {:error, "tailwindcss --help exited with #{status}: #{out}"}
     end
   end
+
+  # NO_COLOR keeps the CLI output free of ANSI escapes (the v4 binary
+  # colorizes even without a TTY on some systems, e.g. GitHub Actions
+  # runners); strip_ansi covers binaries that ignore the convention.
+  defp cmd(command, args) do
+    System.cmd(command, args, stderr_to_stdout: true, env: [{"NO_COLOR", "1"}])
+  end
+
+  defp strip_ansi(out), do: String.replace(out, ~r/\e\[[0-9;]*[A-Za-z]/, "")
 
   @doc """
   Finds the tailwind binary: `:tailwind_bin` config, the tailwind hex
