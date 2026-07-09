@@ -12,13 +12,13 @@
     tailwind_map_path: "priv/phoenix_email/tailwind.map"
   ```
   
-  Absolute paths are left untouched, and without `:otp_app` the previous cwd-relative behaviour is unchanged. — Thanks Gabriel Perales!
+  Absolute paths are left untouched, and without `:otp_app` the previous cwd-relative behaviour is unchanged.
 
-## 0.1.1 — 2026-07-08
+## 0.1.1 — 2026-07-09
 
 ### Patch changes
 
-- [98e72de](https://github.com/gabrielperales/phoenix-email/commit/98e72de5e98f55c61ac6df82d1c8eecbc2e70e00) Fixed Tailwind version detection when the CLI colorizes its output (e.g. on GitHub Actions runners): the compiler now runs the binary with `NO_COLOR=1` and strips ANSI escapes before parsing `--help`, so `mix phoenix_email.tailwind` no longer fails with "could not detect the tailwindcss version". — Thanks Gabriel Perales!
+- [98e72de](https://github.com/gabrielperales/phoenix-email/commit/98e72de5e98f55c61ac6df82d1c8eecbc2e70e00) Fixed Tailwind version detection when the CLI colorizes its output (e.g. on GitHub Actions runners): the compiler now runs the binary with `NO_COLOR=1` and strips ANSI escapes before parsing `--help`, so `mix phoenix_email.tailwind` no longer fails with "could not detect the tailwindcss version".
 
 ## 0.1.0 — 2026-07-09
 
