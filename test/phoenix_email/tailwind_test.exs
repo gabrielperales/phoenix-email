@@ -24,6 +24,39 @@ defmodule PhoenixEmail.TailwindTest do
     on_exit(fn -> Tailwind.put_map(%{}) end)
   end
 
+  describe "map_path/0" do
+    setup do
+      on_exit(fn ->
+        Application.delete_env(:phoenix_email, :tailwind_map_path)
+        Application.delete_env(:phoenix_email, :otp_app)
+      end)
+    end
+
+    test "defaults to the relative priv path" do
+      assert Tailwind.map_path() == Path.join(["priv", "phoenix_email", "tailwind.map"])
+    end
+
+    test "resolves a relative path against the otp_app's app dir" do
+      Application.put_env(:phoenix_email, :otp_app, :phoenix_email)
+
+      assert Tailwind.map_path() ==
+               Application.app_dir(:phoenix_email, "priv/phoenix_email/tailwind.map")
+    end
+
+    test "leaves absolute paths alone even with otp_app set" do
+      Application.put_env(:phoenix_email, :otp_app, :phoenix_email)
+      Application.put_env(:phoenix_email, :tailwind_map_path, "/etc/phoenix_email/tailwind.map")
+
+      assert Tailwind.map_path() == "/etc/phoenix_email/tailwind.map"
+    end
+
+    test "falls back to the relative path when the otp_app is not loaded" do
+      Application.put_env(:phoenix_email, :otp_app, :no_such_app)
+
+      assert Tailwind.map_path() == Path.join(["priv", "phoenix_email", "tailwind.map"])
+    end
+  end
+
   describe "style/1" do
     test "returns nil for nil or empty input" do
       assert Tailwind.style(nil) == nil

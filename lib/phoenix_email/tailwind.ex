@@ -22,10 +22,15 @@ defmodule PhoenixEmail.Tailwind do
   Add to your `config/config.exs`:
 
       config :phoenix_email,
+        otp_app: :my_app,
         tailwind_content: ["lib/**/*.ex"],
         tailwind_map_path: "priv/phoenix_email/tailwind.map"
 
-  and run `mix phoenix_email.tailwind` after changing classes in your
+  `:otp_app` makes the relative `:tailwind_map_path` resolve against your
+  app's `priv` directory (see `map_path/0`) so the map is found inside
+  releases too, not just when running from the project root.
+
+  Run `mix phoenix_email.tailwind` after changing classes in your
   templates (wire it into your `assets.build`/`test` aliases). The binary is
   found through, in order: the `:tailwind_bin` config key, the
   [tailwind](https://hex.pm/packages/tailwind) hex package, `tailwindcss` in
@@ -117,13 +122,41 @@ defmodule PhoenixEmail.Tailwind do
 
   @doc """
   Where the compiled map lives. Override with the `:tailwind_map_path`
-  config key (use an absolute path in releases).
+  config key.
+
+  A relative path resolves against the current directory — correct in dev
+  and test, but releases don't run from the project root. Set the
+  `:otp_app` config key to your application and relative paths resolve
+  through `Application.app_dir/2` instead, which works in dev, test, and
+  releases alike:
+
+      config :phoenix_email,
+        otp_app: :my_app,
+        tailwind_map_path: "priv/phoenix_email/tailwind.map"
   """
   def map_path do
-    Application.get_env(
-      :phoenix_email,
-      :tailwind_map_path,
-      Path.join(["priv", "phoenix_email", "tailwind.map"])
-    )
+    path =
+      Application.get_env(
+        :phoenix_email,
+        :tailwind_map_path,
+        Path.join(["priv", "phoenix_email", "tailwind.map"])
+      )
+
+    with :relative <- Path.type(path),
+         app when not is_nil(app) <- Application.get_env(:phoenix_email, :otp_app),
+         {:ok, app_path} <- app_relative_path(app, path) do
+      app_path
+    else
+      _ -> path
+    end
+  end
+
+  # Application.app_dir/2 raises if the app isn't loaded yet (e.g. the mix
+  # task running before the host app is compiled) — fall back to the plain
+  # relative path in that case.
+  defp app_relative_path(app, path) do
+    {:ok, Application.app_dir(app, path)}
+  rescue
+    ArgumentError -> :error
   end
 end
